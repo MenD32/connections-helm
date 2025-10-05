@@ -2,17 +2,12 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-# Global configuration
-global:
-  nameOverride: ""
-  fullnameOverride: ""
-
 # Frontend configuration
 frontend:
   enabled: true
   replicaCount: 1
   image:
-    repository: connections-frontend
+    repository: ghcr.io/mend32/connections-frontend:main
     pullPolicy: IfNotPresent
     tag: ""
   service:
@@ -47,7 +42,7 @@ backend:
   enabled: true
   replicaCount: 1
   image:
-    repository: connections-backend
+    repository: ghcr.io/mend32/connections-backend:main
     pullPolicy: IfNotPresent
     tag: ""
   service:
@@ -82,18 +77,7 @@ backend:
     targetCPUUtilizationPercentage: 70
     # targetMemoryUtilizationPercentage: 80
 
-# Legacy configuration (kept for backwards compatibility)
-replicaCount: 1
-
-image:
-  repository: nginx
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
-
 imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -106,9 +90,6 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
-podAnnotations: {}
-podLabels: {}
-
 podSecurityContext: {}
   # fsGroup: 2000
 
@@ -119,10 +100,6 @@ securityContext: {}
   # readOnlyRootFilesystem: true
   # runAsNonRoot: true
   # runAsUser: 1000
-
-service:
-  type: ClusterIP
-  port: 80
 
 ingress:
   enabled: false
@@ -183,34 +160,6 @@ route:
       termination: edge
       insecureEdgeTerminationPolicy: Redirect
 
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
-
-livenessProbe:
-  httpGet:
-    path: /
-    port: http
-readinessProbe:
-  httpGet:
-    path: /
-    port: http
-
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
-
 # Additional volumes on the output Deployment definition.
 volumes: []
 # - name: foo
@@ -229,3 +178,71 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# CronJob for database dumps
+cronjob:
+  enabled: false
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  restartPolicy: OnFailure
+  
+  # Backend repository configuration
+  backendRepo:
+    url: "https://github.com/your-org/connections-backend.git"
+    branch: "main"
+    # For private repositories, create a secret with SSH key
+    sshKey: ""  # Name of secret containing SSH private key
+  
+  # Database configuration for the dump
+  database:
+    host: "postgres-service"
+    port: "5432"
+    user: "postgres"
+    password: "password"
+    name: "connections"
+    # Use secret for password (recommended for production)
+    passwordSecret:
+      enabled: false
+      name: "postgres-secret"
+      key: "password"
+  
+  # Container images
+  gitImage:
+    repository: "alpine/git"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  postgresImage:
+    repository: "postgres"
+    tag: "15-alpine"
+    pullPolicy: IfNotPresent
+  
+  # Storage for dump files
+  storage:
+    enabled: false
+    mountPath: "/dumps"
+    persistentVolumeClaim: ""  # Name of existing PVC
+  
+  # Environment variables
+  env:
+    additional: []
+      # - name: DUMP_RETENTION_DAYS
+      #   value: "7"
+  
+  # Pod configuration
+  podAnnotations: {}
+  resources: {}
+    # limits:
+    #   cpu: 500m
+    #   memory: 512Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

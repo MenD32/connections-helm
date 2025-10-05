@@ -1,0 +1,160 @@
+{{- if .Values.cronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "connections-helm.fullname" . }}-db-dump
+  labels:
+    {{- include "connections-helm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  {{- if .Values.cronjob.timeZone }}
+  timeZone: {{ .Values.cronjob.timeZone }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
+  failedJobsHistoryLimit: {{ .Values.cronjob.failedJobsHistoryLimit }}
+  successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.cronjob.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "connections-helm.labels" . | nindent 12 }}
+            app.kubernetes.io/component: cronjob
+          {{- with .Values.cronjob.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: {{ .Values.cronjob.restartPolicy }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "connections-helm.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          initContainers:
+            - name: git-clone
+              image: {{ .Values.cronjob.gitImage.repository }}:{{ .Values.cronjob.gitImage.tag }}
+              imagePullPolicy: {{ .Values.cronjob.gitImage.pullPolicy }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Cloning backend repository..."
+                  git clone {{ .Values.cronjob.backendRepo.url }} /workspace
+                  cd /workspace
+                  {{- if .Values.cronjob.backendRepo.branch }}
+                  git checkout {{ .Values.cronjob.backendRepo.branch }}
+                  {{- end }}
+                  echo "Repository cloned successfully"
+                  ls -la /workspace
+              volumeMounts:
+                - name: workspace
+                  mountPath: /workspace
+              {{- if .Values.cronjob.backendRepo.sshKey }}
+                - name: ssh-key
+                  mountPath: /root/.ssh
+                  readOnly: true
+              {{- end }}
+              {{- if .Values.cronjob.backendRepo.sshKey }}
+              env:
+                - name: GIT_SSH_COMMAND
+                  value: "ssh -o StrictHostKeyChecking=no -i /root/.ssh/id_rsa"
+              {{- end }}
+          containers:
+            - name: db-dump
+              image: {{ .Values.cronjob.postgresImage.repository }}:{{ .Values.cronjob.postgresImage.tag }}
+              imagePullPolicy: {{ .Values.cronjob.postgresImage.pullPolicy }}
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  echo "Starting database dump process..."
+                  cd /workspace
+                  
+                  # Check if dump.sh exists
+                  if [ ! -f "dump.sh" ]; then
+                    echo "ERROR: dump.sh not found in repository root"
+                    exit 1
+                  fi
+                  
+                  # Make dump.sh executable
+                  chmod +x dump.sh
+                  
+                  # Export database credentials
+                  export PGHOST="$DB_HOST"
+                  export PGPORT="$DB_PORT"
+                  export PGUSER="$DB_USER"
+                  export PGPASSWORD="$DB_PASSWORD"
+                  export PGDATABASE="$DB_NAME"
+                  
+                  echo "Running dump.sh..."
+                  ./dump.sh
+                  
+                  echo "Database dump completed successfully"
+              env:
+                - name: DB_HOST
+                  value: {{ .Values.cronjob.database.host | quote }}
+                - name: DB_PORT
+                  value: {{ .Values.cronjob.database.port | quote }}
+                - name: DB_USER
+                  value: {{ .Values.cronjob.database.user | quote }}
+                - name: DB_PASSWORD
+                  {{- if .Values.cronjob.database.passwordSecret.enabled }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.cronjob.database.passwordSecret.name }}
+                      key: {{ .Values.cronjob.database.passwordSecret.key }}
+                  {{- else }}
+                  value: {{ .Values.cronjob.database.password | quote }}
+                  {{- end }}
+                - name: DB_NAME
+                  value: {{ .Values.cronjob.database.name | quote }}
+                {{- with .Values.cronjob.env.additional }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              volumeMounts:
+                - name: workspace
+                  mountPath: /workspace
+                {{- if .Values.cronjob.storage.enabled }}
+                - name: dump-storage
+                  mountPath: {{ .Values.cronjob.storage.mountPath }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.cronjob.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+          volumes:
+            - name: workspace
+              emptyDir: {}
+            {{- if .Values.cronjob.backendRepo.sshKey }}
+            - name: ssh-key
+              secret:
+                secretName: {{ .Values.cronjob.backendRepo.sshKey }}
+                defaultMode: 0600
+            {{- end }}
+            {{- if .Values.cronjob.storage.enabled }}
+            - name: dump-storage
+              {{- if .Values.cronjob.storage.persistentVolumeClaim }}
+              persistentVolumeClaim:
+                claimName: {{ .Values.cronjob.storage.persistentVolumeClaim }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+            {{- end }}
+          {{- with .Values.cronjob.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.cronjob.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.cronjob.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
