@@ -1,0 +1,45 @@
+{{- if and .Values.route.enabled .Values.route.frontend.enabled .Values.frontend.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "connections-helm.frontend.fullname" . }}
+  labels:
+    {{- include "connections-helm.frontend.labels" . | nindent 4 }}
+  {{- with .Values.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.route.frontend.host }}
+  host: {{ .Values.route.frontend.host }}
+  {{- end }}
+  {{- if .Values.route.frontend.path }}
+  path: {{ .Values.route.frontend.path }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "connections-helm.frontend.fullname" . }}
+    weight: 100
+  port:
+    targetPort: http
+  {{- if .Values.route.frontend.tls.enabled }}
+  tls:
+    termination: {{ .Values.route.frontend.tls.termination }}
+    {{- if .Values.route.frontend.tls.insecureEdgeTerminationPolicy }}
+    insecureEdgeTerminationPolicy: {{ .Values.route.frontend.tls.insecureEdgeTerminationPolicy }}
+    {{- end }}
+    {{- if .Values.route.frontend.tls.certificate }}
+    certificate: |
+{{ .Values.route.frontend.tls.certificate | indent 6 }}
+    {{- end }}
+    {{- if .Values.route.frontend.tls.key }}
+    key: |
+{{ .Values.route.frontend.tls.key | indent 6 }}
+    {{- end }}
+    {{- if .Values.route.frontend.tls.caCertificate }}
+    caCertificate: |
+{{ .Values.route.frontend.tls.caCertificate | indent 6 }}
+    {{- end }}
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}
