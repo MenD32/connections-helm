@@ -194,8 +194,6 @@ cronjob:
   backendRepo:
     url: "https://github.com/your-org/connections-backend.git"
     branch: "main"
-    # For private repositories, create a secret with SSH key
-    sshKey: ""  # Name of secret containing SSH private key
   
   # Database configuration for the dump
   database:
